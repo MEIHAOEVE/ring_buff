@@ -3,7 +3,7 @@
  * @brief   环形缓冲区接口
  * @author  CRITTY.熙影
  * @date    2024-12-27
- * @version 1.0
+ * @version 1.1
  */
  
  #ifndef __RING_BUFFER_H
