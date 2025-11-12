@@ -16,7 +16,7 @@
  /* Exported types -----------------------------------------------------------------------*/
  typedef struct {
      uint8_t *buffer;        // 缓冲区指针 
-     uint16_t size; // 缓冲区大小 
+     uint16_t size;          // 缓冲区大小 
      volatile uint16_t head; // 写指针 (write_ptr) 
      volatile uint16_t tail; // 读指针 (read_ptr) 
  } ring_buffer_t;
@@ -29,10 +29,10 @@
      bool (*read)(ring_buffer_t *rb, uint8_t *data);
      uint16_t (*write_multi)(ring_buffer_t *rb, const uint8_t *data, uint16_t len);
      uint16_t (*read_multi)(ring_buffer_t *rb, uint8_t *data, uint16_t len);
-     uint16_t (*available)(ring_buffer_t *rb);
-     uint16_t (*free_space)(ring_buffer_t *rb);
-     bool (*is_empty)(ring_buffer_t *rb);
-     bool (*is_full)(ring_buffer_t *rb);
+     uint16_t (*available)(const ring_buffer_t *rb);
+     uint16_t (*free_space)(const ring_buffer_t *rb);
+     bool (*is_empty)(const ring_buffer_t *rb);
+     bool (*is_full)(const ring_buffer_t *rb);
      void (*clear)(ring_buffer_t *rb);
  } ring_buffer_ops_t;
  
