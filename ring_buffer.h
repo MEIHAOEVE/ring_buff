@@ -16,7 +16,7 @@
  /* Exported types -----------------------------------------------------------------------*/
  typedef struct {
      uint8_t *buffer;        // 缓冲区指针 
-     volatile uint16_t size; // 缓冲区大小 
+     uint16_t size; // 缓冲区大小 
      volatile uint16_t head; // 写指针 (write_ptr) 
      volatile uint16_t tail; // 读指针 (read_ptr) 
  } ring_buffer_t;

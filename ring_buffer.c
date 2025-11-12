@@ -5,6 +5,10 @@
  * @date    2024-12-27
  * @version 1.1
  * @note    增加了完整的参数有效性检查和边界保护
+ * @note    线程安全说明：
+ *           - 单写单读场景（如 ISR写+主循环读）：无需额外保护
+ *           - 多写多读场景：需要外部互斥锁保护
+ *           - head/tail 使用 volatile 确保内存可见性
  */
 
  #include "ring_buffer.h"
