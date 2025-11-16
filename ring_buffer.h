@@ -1,172 +1,125 @@
 /**
  * @file    ring_buffer.h
- * @brief   »·ÐÎ»º³åÇø½Ó¿Ú 
- * @author  CRITTY.ÎõÓ°
+ * @brief   çŽ¯å½¢ç¼“å†²åŒºå…¬å…±æŽ¥å£ - ä¸­é—´å±‚ç»„ä»¶
+ * @author  CRITTY.ç†™å½±
  * @date    2024-12-27
- * @version 2.0
+ * @version 2.1
  * 
- * @details 
- * ²ÉÓÃ¹¤³§Ä£Ê½Éè¼Æ£¬Ö§³ÖÔËÐÐÊ±Ñ¡Ôñ²»Í¬µÄÏß³Ì°²È«²ßÂÔ£º
- * - ÎÞËøÄ£Ê½ (LOCKFREE)£ºÊÊÓÃÓÚµ¥Éú²úÕß/µ¥Ïû·ÑÕß³¡¾°
- * - ¹ØÖÐ¶ÏÄ£Ê½ (DISABLE_IRQ)£ºÊÊÓÃÓÚÂã»úÏµÍ³ÁÙ½çÇø±£»¤
- * - »¥³âËøÄ£Ê½ (MUTEX)£ºÊÊÓÃÓÚ RTOS ¶àÏß³Ì»·¾³
+ * @details
+ * åµŒå…¥å¼ç³»ç»Ÿæž¶æž„ä¸­é—´å±‚ç»„ä»¶ï¼Œæä¾›é«˜å†…èšä½Žè€¦åˆçš„çŽ¯å½¢ç¼“å†²åŒºå®žçŽ°
  * 
- * @note 
- * - Êµ¼Ê¿ÉÓÃÈÝÁ¿ = size - 1
- * - ËùÓÐÊµÏÖ×ñÑ­Í³Ò»µÄ ring_buffer_ops_t ½Ó¿Ú
+ * ç‰¹æ€§ï¼š
+ * - ç®€å•å·¥åŽ‚æ¨¡å¼ï¼Œè¿è¡Œæ—¶é€‰æ‹©çº¿ç¨‹å®‰å…¨ç­–ç•¥
+ * - å®Œå…¨é™æ€åˆ†é…ï¼Œæ— å †ä¾èµ–
+ * - é…ç½®ä¸Žå®žçŽ°åˆ†ç¦»ï¼Œæ˜“äºŽç§»æ¤
+ * - æ”¯æŒæ‰©å±•ï¼šé€šè¿‡æ³¨å†Œæœºåˆ¶æ·»åŠ è‡ªå®šä¹‰ç­–ç•¥
+ * 
+ * æž¶æž„å®šä½ï¼š
+ *   åº”ç”¨å±‚ï¼ˆä¸šåŠ¡é€»è¾‘ï¼‰
+ *        â†“
+ *   ä¸­é—´å±‚ï¼ˆæœ¬ç»„ä»¶ï¼‰â† æä¾›é€šç”¨ç¼“å†²æœåŠ¡
+ *        â†“
+ *   é©±åŠ¨å±‚ï¼ˆHAL/BSPï¼‰
  */
 
 #ifndef __RING_BUFFER_H
 #define __RING_BUFFER_H
 
-/* Includes -----------------------------------------------------------------------------*/
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Includes ------------------------------------------------------------------*/
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include "ring_buffer_config.h"
 
-/* Exported defines ---------------------------------------------------------------------*/
+/* Exported types ------------------------------------------------------------*/
+
 /**
- * @brief Ìõ¼þ±àÒë¿ª¹Ø£ºÆôÓÃ/½ûÓÃÌØ¶¨ÊµÏÖ
- * 
- * ¸ù¾ÝÊµ¼ÊÐèÇóÔÚ±àÒëÊ±Ñ¡ÔñÐèÒªµÄÊµÏÖ£¬¼õÉÙ´úÂëÌå»ý£º
- * - ÉèÖÃÎª 1£ºÆôÓÃ¸ÃÊµÏÖ
- * - ÉèÖÃÎª 0£º½ûÓÃ¸ÃÊµÏÖ£¨¶ÔÓ¦ .c ÎÄ¼þ²»»á±»±àÒë£©
+ * @brief çº¿ç¨‹å®‰å…¨ç­–ç•¥æžšä¸¾
  */
-#define RING_BUFFER_ENABLE_LOCKFREE    1  /**< ÆôÓÃÎÞËøÊµÏÖ */
-#define RING_BUFFER_ENABLE_DISABLE_IRQ 1  /**< ÆôÓÃ¹ØÖÐ¶ÏÊµÏÖ */
-#define RING_BUFFER_ENABLE_MUTEX       0  /**< ÆôÓÃ»¥³âËøÊµÏÖ */
+typedef enum {
+    RING_BUFFER_TYPE_LOCKFREE = 0,   /**< æ— é”æ¨¡å¼ï¼ˆSPSCï¼‰*/
+    RING_BUFFER_TYPE_DISABLE_IRQ,    /**< å…³ä¸­æ–­æ¨¡å¼ï¼ˆè£¸æœºï¼‰*/
+    RING_BUFFER_TYPE_MUTEX,          /**< äº’æ–¥é”æ¨¡å¼ï¼ˆRTOSï¼‰*/
+    RING_BUFFER_TYPE_CUSTOM_BASE     /**< è‡ªå®šä¹‰ç­–ç•¥èµ·å§‹å€¼ */
+} ring_buffer_type_t;
 
-/* Exported types -----------------------------------------------------------------------*/
+/* Forward declarations ------------------------------------------------------*/
+struct ring_buffer_ops;
 
 /**
- * @brief »·ÐÎ»º³åÇø¿ØÖÆ½á¹¹
+ * @brief çŽ¯å½¢ç¼“å†²åŒºæŽ§åˆ¶ç»“æž„
  * 
  * @note 
- * - head ºÍ tail ÉùÃ÷Îª volatile£¬È·±£ÔÚÖÐ¶ÏÓëÖ÷³ÌÐò¼äµÄÄÚ´æ¿É¼ûÐÔ
- * - Ê¹ÓÃ±ê×¼µÄ"Ò»¸ö¿Õ²Û"²ßÂÔÇø·Ö¿Õ/Âú×´Ì¬£¨Êµ¼ÊÈÝÁ¿ = size - 1£©
+ * - ç”¨æˆ·å¯è§ï¼Œä¾¿äºŽè°ƒè¯•å’ŒåµŒå…¥å…¶ä»–ç»“æž„ä½“
+ * - å†…åµŒ ops æŒ‡é’ˆï¼Œæ— éœ€å•ç‹¬ç®¡ç†
+ * - é€‚åˆé™æ€åˆ†é…
  */
 typedef struct {
-    uint8_t *buffer;        /**< »º³åÇø´æ´¢¿Õ¼äÖ¸Õë */
-    uint16_t size;          /**< »º³åÇø×Ü´óÐ¡£¨×Ö½Ú£© */
-    volatile uint16_t head; /**< Ð´Ö¸Õë£¨Éú²úÕß£© */
-    volatile uint16_t tail; /**< ¶ÁÖ¸Õë£¨Ïû·ÑÕß£© */
-    void *lock;             /**< Ëø¾ä±ú£¨»¥³âËøÄ£Ê½Ê¹ÓÃ£¬ÆäËûÄ£Ê½Îª NULL£© */
+    uint8_t *buffer;                        /**< æ•°æ®ç¼“å†²åŒºæŒ‡é’ˆ */
+    uint16_t size;                          /**< ç¼“å†²åŒºæ€»å¤§å°ï¼ˆå­—èŠ‚ï¼‰*/
+    volatile uint16_t head;                 /**< å†™æŒ‡é’ˆï¼ˆç”Ÿäº§è€…ï¼‰*/
+    volatile uint16_t tail;                 /**< è¯»æŒ‡é’ˆï¼ˆæ¶ˆè´¹è€…ï¼‰*/
+    void *lock;                             /**< é”å¥æŸ„ï¼ˆäº’æ–¥é”æ¨¡å¼ï¼‰*/
+    const struct ring_buffer_ops *ops;      /**< æ“ä½œæŽ¥å£æŒ‡é’ˆ */
+    
+#if RING_BUFFER_ENABLE_STATISTICS
+    uint32_t write_count;                   /**< å†™å…¥æ¬¡æ•° */
+    uint32_t read_count;                    /**< è¯»å–æ¬¡æ•° */
+    uint32_t overflow_count;                /**< æº¢å‡ºæ¬¡æ•° */
+#endif
 } ring_buffer_t;
 
 /**
- * @brief »º³åÇøÊµÏÖÀàÐÍÃ¶¾Ù
+ * @brief æ“ä½œæŽ¥å£ç»“æž„ä½“ï¼ˆç­–ç•¥æ¨¡å¼ï¼‰
  * 
- * ÓÃÓÚ¹¤³§º¯Êý ring_buffer_create() µÄ type ²ÎÊý£¬Ö¸¶¨ÊµÀý»¯ÄÄÖÖÊµÏÖ¡£
+ * @note ç”¨æˆ·é€šè¿‡å°è£…å‡½æ•°è°ƒç”¨ï¼Œæ— éœ€ç›´æŽ¥è®¿é—®
  */
-typedef enum {
-    RING_BUFFER_TYPE_LOCKFREE = 0,   /**< ÎÞËøÄ£Ê½£¨ÊÊÓÃÓÚ SPSC£© */
-    RING_BUFFER_TYPE_DISABLE_IRQ,    /**< ¹ØÖÐ¶ÏÄ£Ê½£¨ÊÊÓÃÓÚÂã»ú£© */
-    RING_BUFFER_TYPE_MUTEX,          /**< »¥³âËøÄ£Ê½£¨ÊÊÓÃÓÚ RTOS£© */
-} ring_buffer_type_t;
-
-/**
- * @brief »·ÐÎ»º³åÇøÍ³Ò»²Ù×÷½Ó¿Ú£¨Ðéº¯Êý±í£©
- * 
- * ËùÓÐÊµÏÖ±ØÐëÌá¹©´Ë½á¹¹µÄÍêÕûÊµÏÖ£¬ÉÏ²ã´úÂëÍ¨¹ý´Ë½Ó¿Úµ÷ÓÃ£¬
- * ÊµÏÖÁË²ßÂÔÄ£Ê½µÄ½âñî¡£
- */
-typedef struct {
-    
-    /**
-     * @brief Ð´Èëµ¥¸ö×Ö½Ú
-     * @param rb    »º³åÇøÖ¸Õë
-     * @param data  ÒªÐ´ÈëµÄ×Ö½Ú
-     * @return true=³É¹¦, false=»º³åÇøÒÑÂú
-     */
+struct ring_buffer_ops {
     bool (*write)(ring_buffer_t *rb, uint8_t data);
-    
-    /**
-     * @brief ¶ÁÈ¡µ¥¸ö×Ö½Ú
-     * @param rb    »º³åÇøÖ¸Õë
-     * @param data  Êä³ö²ÎÊý£¬´æ´¢¶ÁÈ¡µÄ×Ö½Ú
-     * @return true=³É¹¦, false=»º³åÇøÎª¿Õ
-     */
-    bool (*read)(ring_buffer_t *rb, uint8_t *data);   
-   
-    /**
-     * @brief ÅúÁ¿Ð´ÈëÊý¾Ý
-     * @param rb    »º³åÇøÖ¸Õë
-     * @param data  ÒªÐ´ÈëµÄÊý¾ÝÖ¸Õë
-     * @param len   ÒªÐ´ÈëµÄ×Ö½ÚÊý
-     * @return Êµ¼ÊÐ´ÈëµÄ×Ö½ÚÊý£¨¿ÉÄÜÐ¡ÓÚ len£©
-     * @note 
-     * - ×Ô¶¯´¦Àí»·ÈÆÇé¿ö£¨·ÖÁ½¶Î memcpy£©
-     * - ¿Õ¼ä²»×ãÊ±Ð´Èë²¿·ÖÊý¾Ý£¬·µ»ØÊµ¼ÊÐ´ÈëÁ¿
-     */
+    bool (*read)(ring_buffer_t *rb, uint8_t *data);
     uint16_t (*write_multi)(ring_buffer_t *rb, const uint8_t *data, uint16_t len);
-    
-    /**
-     * @brief ÅúÁ¿¶ÁÈ¡Êý¾Ý
-     * @param rb    »º³åÇøÖ¸Õë
-     * @param data  Êä³ö»º³åÇøÖ¸Õë
-     * @param len   ÆÚÍû¶ÁÈ¡µÄ×Ö½ÚÊý
-     * @return Êµ¼Ê¶ÁÈ¡µÄ×Ö½ÚÊý£¨¿ÉÄÜÐ¡ÓÚ len£©
-     * @note 
-     * - ×Ô¶¯´¦Àí»·ÈÆÇé¿ö
-     * - Êý¾Ý²»×ãÊ±¶ÁÈ¡ËùÓÐ¿ÉÓÃÊý¾Ý
-     */
     uint16_t (*read_multi)(ring_buffer_t *rb, uint8_t *data, uint16_t len);
-    
-    /**
-     * @brief ²éÑ¯¿É¶ÁÊý¾ÝÁ¿
-     * @param rb »º³åÇøÖ¸Õë
-     * @return ¿É¶ÁÈ¡µÄ×Ö½ÚÊý
-     */
     uint16_t (*available)(const ring_buffer_t *rb);
-    
-    /**
-     * @brief ²éÑ¯Ê£Óà¿Õ¼ä
-     * @param rb »º³åÇøÖ¸Õë
-     * @return ¿ÉÐ´ÈëµÄ×Ö½ÚÊý
-     */
     uint16_t (*free_space)(const ring_buffer_t *rb);
-    
-    /**
-     * @brief ÅÐ¶Ï»º³åÇøÊÇ·ñÎª¿Õ
-     * @param rb »º³åÇøÖ¸Õë
-     * @return true=¿Õ, false=·Ç¿Õ
-     */
     bool (*is_empty)(const ring_buffer_t *rb);
-    
-    /**
-     * @brief ÅÐ¶Ï»º³åÇøÊÇ·ñÒÑÂú
-     * @param rb »º³åÇøÖ¸Õë
-     * @return true=Âú, false=Î´Âú
-     */
     bool (*is_full)(const ring_buffer_t *rb);
-    
-    /**
-     * @brief Çå¿Õ»º³åÇø
-     * @param rb »º³åÇøÖ¸Õë
-     * @note 
-     * - ½öÖØÖÃ¶ÁÐ´Ö¸Õë£¬²»Çå³ýÊµ¼ÊÊý¾Ý
-     * - »¥³âËøÄ£Ê½»á¼ÓËø±£»¤
-     */
     void (*clear)(ring_buffer_t *rb);
-    
-} ring_buffer_ops_t;
+};
 
-/* Exported functions -------------------------------------------------------------------*/
+/* Exported functions --------------------------------------------------------*/
+
+/* ==================== åˆ›å»ºä¸Žé”€æ¯ ==================== */
 
 /**
- * @brief ¹¤³§º¯Êý£º´´½¨²¢³õÊ¼»¯»·ÐÎ»º³åÇø
- * @param rb     »º³åÇø¿ØÖÆ½á¹¹Ö¸Õë£¨ÓÉµ÷ÓÃÕß·ÖÅä£©
- * @param buffer Êµ¼Ê´æ´¢¿Õ¼äÖ¸Õë£¨ÓÉµ÷ÓÃÕß·ÖÅä£©
- * @param size   »º³åÇø´óÐ¡£¨±ØÐë >= 2£¬Êµ¼Ê¿ÉÓÃ size-1£©
- * @param type   ÊµÏÖÀàÐÍ£¨¼û ring_buffer_type_t£©
- * @return 
- * - ³É¹¦£º·µ»Ø¶ÔÓ¦ÊµÏÖµÄ²Ù×÷½Ó¿ÚÖ¸Õë
- * - Ê§°Ü£º·µ»Ø NULL£¨²ÎÊýÎÞÐ§»òÀàÐÍÎ´ÆôÓÃ£©
+ * @brief åˆ›å»ºå¹¶åˆå§‹åŒ–çŽ¯å½¢ç¼“å†²åŒºï¼ˆå·¥åŽ‚å‡½æ•°ï¼‰
+ * 
+ * @param rb     ç¼“å†²åŒºæŽ§åˆ¶ç»“æž„æŒ‡é’ˆï¼ˆç”¨æˆ·åˆ†é…ï¼‰
+ * @param buffer æ•°æ®å­˜å‚¨ç©ºé—´æŒ‡é’ˆï¼ˆç”¨æˆ·åˆ†é…ï¼‰
+ * @param size   ç¼“å†²åŒºå¤§å°ï¼ˆå­—èŠ‚ï¼Œå¿…é¡» >= RING_BUFFER_MIN_SIZEï¼‰
+ * @param type   çº¿ç¨‹å®‰å…¨ç­–ç•¥
+ * 
+ * @return true=æˆåŠŸ, false=å¤±è´¥
+ * 
  * @note 
- * - »¥³âËøÄ£Ê½»á¶¯Ì¬´´½¨»¥³âËø£¨ÐèÔÚ RTOS »·¾³ÖÐ£©
- * - Èç¹û±àÒëÊ±½ûÓÃÁËÄ³¸öÊµÏÖ£¬ÇëÇó¸ÃÀàÐÍ»á·µ»Ø NULL
+ * - å®Œå…¨é™æ€åˆ†é…ï¼Œæ— å †ä¾èµ–
+ * - å®žé™…å¯ç”¨å®¹é‡ = size - 1
+ * - äº’æ–¥é”æ¨¡å¼ä¼šè‡ªåŠ¨åˆ›å»ºäº’æ–¥é”
+ * 
+ * @code
+ * static uint8_t uart_rx_buf[256];
+ * static ring_buffer_t uart_rx_rb;
+ * 
+ * void uart_init(void) {
+ *     ring_buffer_create(&uart_rx_rb, uart_rx_buf, 256, 
+ *                        RING_BUFFER_TYPE_LOCKFREE);
+ * }
+ * @endcode
  */
-const ring_buffer_ops_t* ring_buffer_create(
+bool ring_buffer_create(
     ring_buffer_t *rb,
     uint8_t *buffer,
     uint16_t size,
@@ -174,16 +127,117 @@ const ring_buffer_ops_t* ring_buffer_create(
 );
 
 /**
- * @brief Ïú»Ù»º³åÇø£¨ÊÍ·Å×ÊÔ´£©
+ * @brief é”€æ¯çŽ¯å½¢ç¼“å†²åŒºï¼Œé‡Šæ”¾èµ„æº
  * 
- * @param rb   »º³åÇøÖ¸Õë
- * @param type ÊµÏÖÀàÐÍ£¨ÓÃÓÚÈ·¶¨ÈçºÎÇåÀí×ÊÔ´£©
+ * @param rb ç¼“å†²åŒºæŒ‡é’ˆ
+ * 
  * @note 
- * - »¥³âËøÄ£Ê½»áÉ¾³ý»¥³âËø
- * - ÆäËûÄ£Ê½½öÇåÀíÄÚ²¿×´Ì¬
- * - ²»»áÊÍ·Å buffer ÄÚ´æ£¨ÓÉµ÷ÓÃÕß¹ÜÀí£©
+ * - äº’æ–¥é”æ¨¡å¼ä¼šåˆ é™¤äº’æ–¥é”
+ * - ä¸ä¼šé‡Šæ”¾ buffer å†…å­˜ï¼ˆç”±ç”¨æˆ·ç®¡ç†ï¼‰
  */
-void ring_buffer_destroy(ring_buffer_t *rb, ring_buffer_type_t type);
+void ring_buffer_destroy(ring_buffer_t *rb);
 
-/* ---------------------------------- end of file ------------------------------------- */
+/* ==================== åŸºæœ¬è¯»å†™æ“ä½œ ==================== */
+
+/**
+ * @brief å†™å…¥å•ä¸ªå­—èŠ‚
+ */
+bool ring_buffer_write(ring_buffer_t *rb, uint8_t data);
+
+/**
+ * @brief è¯»å–å•ä¸ªå­—èŠ‚
+ */
+bool ring_buffer_read(ring_buffer_t *rb, uint8_t *data);
+
+/**
+ * @brief æ‰¹é‡å†™å…¥æ•°æ®
+ * 
+ * @return å®žé™…å†™å…¥çš„å­—èŠ‚æ•°ï¼ˆå¯èƒ½å°äºŽ lenï¼‰
+ */
+uint16_t ring_buffer_write_multi(ring_buffer_t *rb, const uint8_t *data, uint16_t len);
+
+/**
+ * @brief æ‰¹é‡è¯»å–æ•°æ®
+ * 
+ * @return å®žé™…è¯»å–çš„å­—èŠ‚æ•°ï¼ˆå¯èƒ½å°äºŽ lenï¼‰
+ */
+uint16_t ring_buffer_read_multi(ring_buffer_t *rb, uint8_t *data, uint16_t len);
+
+/* ==================== çŠ¶æ€æŸ¥è¯¢ ==================== */
+
+/**
+ * @brief æŸ¥è¯¢å¯è¯»æ•°æ®é‡
+ */
+uint16_t ring_buffer_available(const ring_buffer_t *rb);
+
+/**
+ * @brief æŸ¥è¯¢å‰©ä½™ç©ºé—´
+ */
+uint16_t ring_buffer_free_space(const ring_buffer_t *rb);
+
+/**
+ * @brief åˆ¤æ–­ç¼“å†²åŒºæ˜¯å¦ä¸ºç©º
+ */
+bool ring_buffer_is_empty(const ring_buffer_t *rb);
+
+/**
+ * @brief åˆ¤æ–­ç¼“å†²åŒºæ˜¯å¦å·²æ»¡
+ */
+bool ring_buffer_is_full(const ring_buffer_t *rb);
+
+/**
+ * @brief æ¸…ç©ºç¼“å†²åŒº
+ * 
+ * @note ä»…é‡ç½®è¯»å†™æŒ‡é’ˆï¼Œä¸æ¸…é™¤å®žé™…æ•°æ®
+ */
+void ring_buffer_clear(ring_buffer_t *rb);
+
+/* ==================== æ‰©å±•æœºåˆ¶ ==================== */
+
+/**
+ * @brief æ³¨å†Œè‡ªå®šä¹‰ç­–ç•¥ï¼ˆé«˜çº§åŠŸèƒ½ï¼‰
+ * 
+ * @param type ç­–ç•¥ç±»åž‹ï¼ˆ>= RING_BUFFER_TYPE_CUSTOM_BASEï¼‰
+ * @param ops  æ“ä½œæŽ¥å£æŒ‡é’ˆ
+ * 
+ * @return true=æˆåŠŸ, false=å¤±è´¥
+ * 
+ * @note 
+ * - ç”¨äºŽæ‰©å±•æ–°çš„çº¿ç¨‹å®‰å…¨ç­–ç•¥
+ * - è¯¦è§ README.md "æ‰©å±•æŒ‡å—"
+ * 
+ * @code
+ * // è‡ªå®šä¹‰ç­–ç•¥ç¤ºä¾‹
+ * const struct ring_buffer_ops my_custom_ops = { ... };
+ * ring_buffer_register_ops(RING_BUFFER_TYPE_CUSTOM_BASE, &my_custom_ops);
+ * @endcode
+ */
+bool ring_buffer_register_ops(ring_buffer_type_t type, const struct ring_buffer_ops *ops);
+
+/**
+ * @brief èŽ·å–æ“ä½œæŽ¥å£æŒ‡é’ˆï¼ˆæ€§èƒ½å…³é”®åœºæ™¯ï¼‰
+ * 
+ * @return æ“ä½œæŽ¥å£æŒ‡é’ˆï¼Œå‚æ•°é”™è¯¯è¿”å›ž NULL
+ * 
+ * @warning 
+ * - ä»…åœ¨æ€§èƒ½å…³é”®åœºæ™¯ä½¿ç”¨ï¼ˆå¦‚ ISRï¼‰
+ * - éœ€è‡ªè¡Œä¿è¯å‚æ•°æ­£ç¡®æ€§
+ * 
+ * @code
+ * // ISR ä¸­ä½¿ç”¨
+ * void UART_IRQHandler(void) {
+ *     uint8_t byte = UART->DATA;
+ *     uart_rx_rb.ops->write(&uart_rx_rb, byte);
+ * }
+ * @endcode
+ */
+static inline const struct ring_buffer_ops* ring_buffer_get_ops(const ring_buffer_t *rb)
+{
+    return (rb ? rb->ops : NULL);
+}
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* __RING_BUFFER_H */

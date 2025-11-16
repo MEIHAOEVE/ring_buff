@@ -1,147 +1,302 @@
 /**
  * @file    ring_buffer.c
- * @brief   »·ĞÎ»º³åÇø¹¤³§º¯ÊıÊµÏÖ
- * @author  CRITTY.ÎõÓ°
+ * @brief   ç¯å½¢ç¼“å†²åŒºå·¥å‚å‡½æ•°ä¸å°è£…å®ç°
+ * @author  CRITTY.ç†™å½±
  * @date    2024-12-27
- * @version 2.0
- * 
- * @details
- * ÊµÏÖ¹¤³§Ä£Ê½µÄºËĞÄÂß¼­£º
- * 1. ¸ù¾İ type ²ÎÊıÑ¡Ôñ¾ßÌåÊµÏÖ
- * 2. ³õÊ¼»¯¹«¹²×Ö¶Î£¨buffer¡¢size¡¢head¡¢tail£©
- * 3. ·µ»Ø¶ÔÓ¦ÊµÏÖµÄ²Ù×÷½Ó¿ÚÖ¸Õë
+ * @version 2.1
  */
 
 #include "ring_buffer.h"
 
-/* External declarations ----------------------------------------------------------------*/
+/* External declarations -----------------------------------------------------*/
 
-/* Íâ²¿ÉùÃ÷¸÷ÊµÏÖÄ£¿éµÄ²Ù×÷½Ó¿Ú£¨ÔÚ¶ÔÓ¦ .c ÎÄ¼şÖĞ¶¨Òå£© */
 #if RING_BUFFER_ENABLE_LOCKFREE
-extern const ring_buffer_ops_t ring_buffer_lockfree_ops;
+extern const struct ring_buffer_ops ring_buffer_lockfree_ops;
 #endif
 
 #if RING_BUFFER_ENABLE_DISABLE_IRQ
-extern const ring_buffer_ops_t ring_buffer_disable_irq_ops;
+extern const struct ring_buffer_ops ring_buffer_disable_irq_ops;
 #endif
 
 #if RING_BUFFER_ENABLE_MUTEX
-extern const ring_buffer_ops_t ring_buffer_mutex_ops;
+extern const struct ring_buffer_ops ring_buffer_mutex_ops;
+extern bool ring_buffer_mutex_init(ring_buffer_t *rb);
+extern void ring_buffer_mutex_deinit(ring_buffer_t *rb);
 #endif
 
-/* Private functions --------------------------------------------------------------------*/
+/* Private defines -----------------------------------------------------------*/
+#define MAX_CUSTOM_OPS  4  /**< æœ€å¤šæ”¯æŒ 4 ä¸ªè‡ªå®šä¹‰ç­–ç•¥ */
+
+/* Private types -------------------------------------------------------------*/
 
 /**
- * @brief ¹«¹²³õÊ¼»¯Âß¼­£¨ËùÓĞÊµÏÖ¹²ÓÃ£©
- * @param rb     »º³åÇøÖ¸Õë
- * @param buffer ´æ´¢¿Õ¼äÖ¸Õë
- * @param size   »º³åÇø´óĞ¡
- * @return true=³É¹¦, false=²ÎÊıÎŞĞ§
+ * @brief è‡ªå®šä¹‰ç­–ç•¥æ³¨å†Œè¡¨é¡¹
+ */
+typedef struct {
+    ring_buffer_type_t type;
+    const struct ring_buffer_ops *ops;
+} custom_ops_entry_t;
+
+/* Private variables ---------------------------------------------------------*/
+
+/**
+ * @brief è‡ªå®šä¹‰ç­–ç•¥æ³¨å†Œè¡¨
+ */
+static custom_ops_entry_t custom_ops_registry[MAX_CUSTOM_OPS];
+static uint8_t custom_ops_count = 0;
+
+/* Private functions ---------------------------------------------------------*/
+
+/**
+ * @brief å…¬å…±åˆå§‹åŒ–é€»è¾‘
  */
 static bool ring_buffer_init_common(ring_buffer_t *rb, uint8_t *buffer, uint16_t size)
 {
-    /* ²ÎÊıĞ£Ñé */
-    if (!rb || !buffer || size < 2) 
-	{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !buffer || size < RING_BUFFER_MIN_SIZE) {
         return false;
     }
+#endif
     
-    /* ³õÊ¼»¯¹«¹²×Ö¶Î */
     rb->buffer = buffer;
     rb->size = size;
     rb->head = 0;
     rb->tail = 0;
-    rb->lock = NULL;  /* Ä¬ÈÏÎŞËø£¬mutex Ä£Ê½»á¸²¸Ç */
+    rb->lock = NULL;
+    rb->ops = NULL;
+    
+#if RING_BUFFER_ENABLE_STATISTICS
+    rb->write_count = 0;
+    rb->read_count = 0;
+    rb->overflow_count = 0;
+#endif
     
     return true;
 }
 
-/* Exported functions -------------------------------------------------------------------*/
+/**
+ * @brief æŸ¥æ‰¾è‡ªå®šä¹‰ç­–ç•¥
+ */
+static const struct ring_buffer_ops* find_custom_ops(ring_buffer_type_t type)
+{
+    for (uint8_t i = 0; i < custom_ops_count; i++) {
+        if (custom_ops_registry[i].type == type) {
+            return custom_ops_registry[i].ops;
+        }
+    }
+    return NULL;
+}
+
+/* Exported functions --------------------------------------------------------*/
 
 /**
- * @brief ¹¤³§º¯ÊıÊµÏÖ
+ * @brief å·¥å‚å‡½æ•°ï¼šåˆ›å»ºç¯å½¢ç¼“å†²åŒº
  */
-const ring_buffer_ops_t* ring_buffer_create(
+bool ring_buffer_create(
     ring_buffer_t *rb,
     uint8_t *buffer,
     uint16_t size,
     ring_buffer_type_t type)
 {
-    /* Ö´ĞĞ¹«¹²³õÊ¼»¯ */
-    if (!ring_buffer_init_common(rb, buffer, size)) 
-	{
-        return NULL;
+    /* å…¬å…±åˆå§‹åŒ– */
+    if (!ring_buffer_init_common(rb, buffer, size)) {
+        RB_LOG("Create failed: invalid parameters");
+        return false;
     }
     
-    /* ¸ù¾İÀàĞÍ·µ»Ø¶ÔÓ¦ÊµÏÖ */
-    switch (type) 
-	{
+    /* æ ¹æ®ç±»å‹é€‰æ‹©å®ç° */
+    switch (type) {
         
 #if RING_BUFFER_ENABLE_LOCKFREE
         case RING_BUFFER_TYPE_LOCKFREE:
-            /* ÎŞËøÄ£Ê½£ºÎŞĞè¶îÍâ³õÊ¼»¯ */
-            return &ring_buffer_lockfree_ops;
+            rb->ops = &ring_buffer_lockfree_ops;
+            RB_LOG("Created lockfree buffer (size=%u)", size);
+            return true;
 #endif
         
 #if RING_BUFFER_ENABLE_DISABLE_IRQ
         case RING_BUFFER_TYPE_DISABLE_IRQ:
-            /* ¹ØÖĞ¶ÏÄ£Ê½£ºÎŞĞè¶îÍâ³õÊ¼»¯ */
-            return &ring_buffer_disable_irq_ops;
+            rb->ops = &ring_buffer_disable_irq_ops;
+            RB_LOG("Created disable_irq buffer (size=%u)", size);
+            return true;
 #endif
         
 #if RING_BUFFER_ENABLE_MUTEX
         case RING_BUFFER_TYPE_MUTEX:
-            /* »¥³âËøÄ£Ê½£ºĞè´´½¨»¥³âËø£¨ÔÚ mutex Ä£¿éÄÚ²¿Íê³É£© */
-            {
-                /* µ÷ÓÃ mutex Ä£¿éµÄ³õÊ¼»¯º¯Êı´´½¨Ëø */
-                extern bool ring_buffer_mutex_init(ring_buffer_t *rb);
-                if (!ring_buffer_mutex_init(rb)) {
-                    return NULL;
-                }
+            if (!ring_buffer_mutex_init(rb)) {
+                RB_LOG("Create failed: mutex init failed");
+                return false;
             }
-            return &ring_buffer_mutex_ops;
+            rb->ops = &ring_buffer_mutex_ops;
+            RB_LOG("Created mutex buffer (size=%u)", size);
+            return true;
 #endif
         
         default:
-            /* Î´ÖªÀàĞÍ»ò¸ÃÊµÏÖÎ´ÆôÓÃ */
-            return NULL;
+            /* å°è¯•æŸ¥æ‰¾è‡ªå®šä¹‰ç­–ç•¥ */
+            if (type >= RING_BUFFER_TYPE_CUSTOM_BASE) {
+                const struct ring_buffer_ops *custom_ops = find_custom_ops(type);
+                if (custom_ops) {
+                    rb->ops = custom_ops;
+                    RB_LOG("Created custom buffer (type=%d, size=%u)", type, size);
+                    return true;
+                }
+            }
+            
+            RB_LOG("Create failed: unsupported type %d", type);
+            return false;
     }
 }
 
 /**
- * @brief Ïú»Ù»º³åÇø
+ * @brief é”€æ¯ç¼“å†²åŒº
  */
-void ring_buffer_destroy(ring_buffer_t *rb, ring_buffer_type_t type)
+void ring_buffer_destroy(ring_buffer_t *rb)
 {
-    if (!rb) 
-	{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb) {
         return;
     }
-    
-    /* ¸ù¾İÀàĞÍÖ´ĞĞÇåÀí */
-    switch (type) {
-        
-#if RING_BUFFER_ENABLE_MUTEX
-        case RING_BUFFER_TYPE_MUTEX:
-            /* É¾³ı»¥³âËø */
-            {
-                extern void ring_buffer_mutex_deinit(ring_buffer_t *rb);
-                ring_buffer_mutex_deinit(rb);
-            }
-            break;
 #endif
-        
-        default:
-            /* ÆäËûÄ£Ê½ÎŞĞèÌØÊâÇåÀí */
-            break;
-    }
     
-    /* Çå¿Õ¹«¹²×Ö¶Î */
+#if RING_BUFFER_ENABLE_MUTEX
+    /* æ¸…ç†äº’æ–¥é” */
+    if (rb->lock) {
+        ring_buffer_mutex_deinit(rb);
+    }
+#endif
+    
+    RB_LOG("Destroyed buffer");
+    
+    /* æ¸…ç©ºç»“æ„ä½“ */
     rb->buffer = NULL;
     rb->size = 0;
     rb->head = 0;
     rb->tail = 0;
     rb->lock = NULL;
+    rb->ops = NULL;
 }
 
-/* ---------------------------------- end of file ------------------------------------- */
+/**
+ * @brief æ³¨å†Œè‡ªå®šä¹‰ç­–ç•¥
+ */
+bool ring_buffer_register_ops(ring_buffer_type_t type, const struct ring_buffer_ops *ops)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!ops || type < RING_BUFFER_TYPE_CUSTOM_BASE) {
+        RB_LOG("Register failed: invalid parameters");
+        return false;
+    }
+    
+    if (custom_ops_count >= MAX_CUSTOM_OPS) {
+        RB_LOG("Register failed: registry full");
+        return false;
+    }
+    
+    /* æ£€æŸ¥æ˜¯å¦å·²æ³¨å†Œ */
+    if (find_custom_ops(type)) {
+        RB_LOG("Register failed: type %d already registered", type);
+        return false;
+    }
+#endif
+    
+    /* æ·»åŠ åˆ°æ³¨å†Œè¡¨ */
+    custom_ops_registry[custom_ops_count].type = type;
+    custom_ops_registry[custom_ops_count].ops = ops;
+    custom_ops_count++;
+    
+    RB_LOG("Registered custom ops (type=%d)", type);
+    return true;
+}
+
+/* ==================== ä¾¿æ·å°è£… API å®ç° ==================== */
+
+bool ring_buffer_write(ring_buffer_t *rb, uint8_t data)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !rb->ops || !rb->ops->write) {
+        return false;
+    }
+#endif
+    return rb->ops->write(rb, data);
+}
+
+bool ring_buffer_read(ring_buffer_t *rb, uint8_t *data)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !data || !rb->ops || !rb->ops->read) {
+        return false;
+    }
+#endif
+    return rb->ops->read(rb, data);
+}
+
+uint16_t ring_buffer_write_multi(ring_buffer_t *rb, const uint8_t *data, uint16_t len)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !data || len == 0 || !rb->ops || !rb->ops->write_multi) {
+        return 0;
+    }
+#endif
+    return rb->ops->write_multi(rb, data, len);
+}
+
+uint16_t ring_buffer_read_multi(ring_buffer_t *rb, uint8_t *data, uint16_t len)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !data || len == 0 || !rb->ops || !rb->ops->read_multi) {
+        return 0;
+    }
+#endif
+    return rb->ops->read_multi(rb, data, len);
+}
+
+uint16_t ring_buffer_available(const ring_buffer_t *rb)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !rb->ops || !rb->ops->available) {
+        return 0;
+    }
+#endif
+    return rb->ops->available(rb);
+}
+
+uint16_t ring_buffer_free_space(const ring_buffer_t *rb)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !rb->ops || !rb->ops->free_space) {
+        return 0;
+    }
+#endif
+    return rb->ops->free_space(rb);
+}
+
+bool ring_buffer_is_empty(const ring_buffer_t *rb)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !rb->ops || !rb->ops->is_empty) {
+        return true;
+    }
+#endif
+    return rb->ops->is_empty(rb);
+}
+
+bool ring_buffer_is_full(const ring_buffer_t *rb)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !rb->ops || !rb->ops->is_full) {
+        return false;
+    }
+#endif
+    return rb->ops->is_full(rb);
+}
+
+void ring_buffer_clear(ring_buffer_t *rb)
+{
+#if RING_BUFFER_ENABLE_PARAM_CHECK
+    if (!rb || !rb->ops || !rb->ops->clear) {
+        return;
+    }
+#endif
+    rb->ops->clear(rb);
+}
